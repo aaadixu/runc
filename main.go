@@ -55,8 +55,8 @@ value for "bundle" is the current directory.`
 )
 
 func main() {
-	app := cli.NewApp()
-	app.Name = "runc"
+	app := cli.NewApp() // 新建一个app
+	app.Name = "runc"   // 定义app名称为 runc
 	app.Usage = usage
 
 	v := []string{version}
@@ -64,9 +64,9 @@ func main() {
 	if gitCommit != "" {
 		v = append(v, "commit: "+gitCommit)
 	}
-	v = append(v, "spec: "+specs.Version)
-	v = append(v, "go: "+runtime.Version())
-
+	v = append(v, "spec: "+specs.Version)   // spec（规格）的版本
+	v = append(v, "go: "+runtime.Version()) // go的版本
+	// seccomp 一种 Linux 内核安全特性，用于限制容器内进程可以调用的系统调用
 	major, minor, micro := seccomp.Version()
 	if major+minor+micro > 0 {
 		v = append(v, fmt.Sprintf("libseccomp: %d.%d.%d", major, minor, micro))
@@ -80,7 +80,7 @@ func main() {
 		root = xdgRuntimeDir + "/runc"
 		xdgDirUsed = true
 	}
-
+	// 命令的标志
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
 			Name:  "debug",
@@ -116,6 +116,7 @@ func main() {
 			Usage: "ignore cgroup permission errors ('true', 'false', or 'auto')",
 		},
 	}
+	// 设置子命令
 	app.Commands = []cli.Command{
 		checkpointCommand,
 		createCommand,
@@ -164,6 +165,7 @@ func main() {
 	// the error on cli.ErrWriter and exit.
 	// Use our own writer here to ensure the log gets sent to the right location.
 	cli.ErrWriter = &FatalWriter{cli.ErrWriter}
+	// 启动app
 	if err := app.Run(os.Args); err != nil {
 		fatal(err)
 	}

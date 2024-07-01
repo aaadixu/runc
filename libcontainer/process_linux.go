@@ -525,6 +525,7 @@ func (p *initProcess) goCreateMountSources(ctx context.Context) (mountSourceRequ
 	return requestFn, cancelFn, nil
 }
 
+// create 的最终目的就是启动init 进程，让init 进程创建容器环境
 func (p *initProcess) start() (retErr error) {
 	defer p.comm.closeParent()
 	err := p.cmd.Start()

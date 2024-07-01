@@ -318,7 +318,7 @@ func (c *Container) start(process *Process) (retErr error) {
 			}
 		}()
 	}
-
+	// // 创建父进程，父进程指的是当前create进程，而子进程指的是init进程
 	parent, err := c.newParentProcess(process)
 	if err != nil {
 		return fmt.Errorf("unable to create new parent process: %w", err)
