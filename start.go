@@ -22,6 +22,7 @@ your host.`,
 		if err := checkArgs(context, 1, exactArgs); err != nil {
 			return err
 		}
+		// 获取container
 		container, err := getContainer(context)
 		if err != nil {
 			return err
@@ -32,10 +33,12 @@ your host.`,
 		}
 		switch status {
 		case libcontainer.Created:
+			// start 前对应的状态就是容器环境已经创建好了，在等待start, 然后切换至running
 			notifySocket, err := notifySocketStart(context, os.Getenv("NOTIFY_SOCKET"), container.ID())
 			if err != nil {
 				return err
 			}
+			// 执行exec 容器进程替代init
 			if err := container.Exec(); err != nil {
 				return err
 			}

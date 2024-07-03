@@ -525,9 +525,10 @@ func (p *initProcess) goCreateMountSources(ctx context.Context) (mountSourceRequ
 	return requestFn, cancelFn, nil
 }
 
-// create 的最终目的就是启动init 进程，让init 进程创建容器环境
+// create 的最终目的就是启动init 进程，让 init 进程创建容器环境
 func (p *initProcess) start() (retErr error) {
 	defer p.comm.closeParent()
+	// 调用 runc init
 	err := p.cmd.Start()
 	p.process.ops = p
 	// close the child-side of the pipes (controlled by child)
@@ -580,6 +581,7 @@ func (p *initProcess) start() (retErr error) {
 	// Do this before syncing with child so that no children can escape the
 	// cgroup. We don't need to worry about not doing this and not being root
 	// because we'd be using the rootless cgroup manager in that case.
+	// 限定子进程的cgroups，避免有进程逃离cgroup限定
 	if err := p.manager.Apply(p.pid()); err != nil {
 		return fmt.Errorf("unable to apply cgroup configuration: %w", err)
 	}
@@ -588,6 +590,7 @@ func (p *initProcess) start() (retErr error) {
 			return fmt.Errorf("unable to apply Intel RDT configuration: %w", err)
 		}
 	}
+	// 将bootstrapData写入init通道,runc init进程接收到会设置自身运行的namespaces等
 	if _, err := io.Copy(p.comm.initSockParent, p.bootstrapData); err != nil {
 		return fmt.Errorf("can't copy bootstrap data to pipe: %w", err)
 	}
@@ -595,7 +598,7 @@ func (p *initProcess) start() (retErr error) {
 	if err != nil {
 		return err
 	}
-
+	// 通过init pipe获取子进程的pid
 	childPid, err := p.getChildPid()
 	if err != nil {
 		return fmt.Errorf("can't get final child's PID from pipe: %w", err)
@@ -604,10 +607,12 @@ func (p *initProcess) start() (retErr error) {
 	// Save the standard descriptor names before the container process
 	// can potentially move them (e.g., via dup2()).  If we don't do this now,
 	// we won't know at checkpoint time which file descriptor to look up.
+	// 获取子进程的文件描述符路径
 	fds, err := getPipeFds(childPid)
 	if err != nil {
 		return fmt.Errorf("error getting pipe fds for pid %d: %w", childPid, err)
 	}
+	// 记录子进程的的额外文件描述符路径，以免后面找不到
 	p.setExternalDescriptors(fds)
 
 	// Wait for our first child to exit
@@ -642,8 +647,11 @@ func (p *initProcess) start() (retErr error) {
 	}
 
 	var seenProcReady bool
+	// 和初始化进程的进行状态同步
+	// parseSync 是会循环到socket 关闭
 	ierr := parseSync(p.comm.syncSockParent, func(sync *syncT) error {
 		switch sync.Type {
+		// 当init进程ready 了
 		case procMountPlease:
 			if mountRequest == nil {
 				return fmt.Errorf("cannot fulfil mount requests as a rootless user")

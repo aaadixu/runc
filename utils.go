@@ -75,6 +75,7 @@ func setupSpec(context *cli.Context) (*specs.Spec, error) {
 			return nil, err
 		}
 	}
+	// 加载配置文件
 	spec, err := loadSpec(specConfig)
 	if err != nil {
 		return nil, err

@@ -99,11 +99,13 @@ func Init() {
 // it means the error can not be communicated back to the parent.
 func startInitialization() (retErr error) {
 	// Get the synchronisation pipe.
+
 	envSyncPipe := os.Getenv("_LIBCONTAINER_SYNCPIPE")
 	syncPipeFd, err := strconv.Atoi(envSyncPipe)
 	if err != nil {
 		return fmt.Errorf("unable to convert _LIBCONTAINER_SYNCPIPE: %w", err)
 	}
+
 	syncPipe := newSyncSocket(os.NewFile(uintptr(syncPipeFd), "sync"))
 	defer syncPipe.Close()
 
@@ -124,11 +126,13 @@ func startInitialization() (retErr error) {
 	}()
 
 	// Get the INITPIPE.
+	// 获取 init pipe， 这里是之前提到 init-c 这个文件描述fd
 	envInitPipe := os.Getenv("_LIBCONTAINER_INITPIPE")
 	initPipeFd, err := strconv.Atoi(envInitPipe)
 	if err != nil {
 		return fmt.Errorf("unable to convert _LIBCONTAINER_INITPIPE: %w", err)
 	}
+	// 通过fd 建立pipe 与父进程通信
 	initPipe := os.NewFile(uintptr(initPipeFd), "init")
 	defer initPipe.Close()
 

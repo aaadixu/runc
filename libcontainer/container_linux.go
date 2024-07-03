@@ -232,10 +232,14 @@ func (c *Container) Exec() error {
 func (c *Container) exec() error {
 	path := filepath.Join(c.stateDir, execFifoFilename)
 	pid := c.initProcess.pid()
+	// 读取 /run/runc/<containerID>/exec.fifo 管道，
+	//由于socketpair管道特性，父进程(init进程)被读取信息后便不会阻塞，继续往下执行，关闭socket
 	blockingFifoOpenCh := awaitFifoOpen(path)
+	// 获取exec.fifo文件中内容，或者等待进程变为僵尸进程
 	for {
 		select {
 		case result := <-blockingFifoOpenCh:
+			// handleFifoResult 最后读完内容后会删除掉 exec.fifo
 			return handleFifoResult(result)
 
 		case <-time.After(time.Millisecond * 100):
@@ -305,6 +309,7 @@ func (c *Container) start(process *Process) (retErr error) {
 	if c.config.Cgroups.Resources.SkipDevices {
 		return errors.New("can't start container with SkipDevices set")
 	}
+	// 需要初始化，创建为了后面调用 exec 的通信管道文件
 	if process.Init {
 		if c.initProcessStartTime != 0 {
 			return errors.New("container already has init process")
@@ -318,7 +323,7 @@ func (c *Container) start(process *Process) (retErr error) {
 			}
 		}()
 	}
-	// // 创建父进程，父进程指的是当前create进程，而子进程指的是init进程
+	// // 创建父进程，父进程指的是当前 create 进程，而子进程指的是init进程
 	parent, err := c.newParentProcess(process)
 	if err != nil {
 		return fmt.Errorf("unable to create new parent process: %w", err)
@@ -347,6 +352,7 @@ func (c *Container) start(process *Process) (retErr error) {
 	if err := utils.CloseExecFrom(3); err != nil {
 		return fmt.Errorf("unable to mark non-stdio fds as cloexec: %w", err)
 	}
+	// parent.start 方法会实际执行 init 进程。
 	if err := parent.start(); err != nil {
 		return fmt.Errorf("unable to start container process: %w", err)
 	}
@@ -358,7 +364,7 @@ func (c *Container) start(process *Process) (retErr error) {
 			if err != nil {
 				return err
 			}
-
+			// 执行poststart hook (容器创建成功后，运行前的任务)
 			if err := c.config.Hooks.Run(configs.Poststart, s); err != nil {
 				if err := ignoreTerminateErrors(parent.terminate()); err != nil {
 					logrus.Warn(fmt.Errorf("error running poststart hook: %w", err))
@@ -555,7 +561,8 @@ func (c *Container) newParentProcess(p *Process) (parentProcess, error) {
 			return nil, fmt.Errorf("[internal error] attempted to spawn a container with no /proc/self/exe protection")
 		}
 	}
-
+	// 创建init父子进程的通信管道；因为准备要从当前进程创建容器
+	// init-p, init-c
 	cmd := exec.Command(exePath, "init")
 	cmd.Args[0] = os.Args[0]
 	cmd.Stdin = p.Stdin
@@ -629,9 +636,14 @@ func (c *Container) newParentProcess(p *Process) (parentProcess, error) {
 		// for container rootfs escape (and not doing it in `runc exec` avoided
 		// that problem), but we no longer do that. However, there's no need to do
 		// this for `runc exec` so we just keep it this way to be safe.
+		// 将exec.fifo 也加入到extraFiles
 		if err := c.includeExecFifo(cmd); err != nil {
 			return nil, fmt.Errorf("unable to setup exec fifo: %w", err)
 		}
+		// 生成initProcess 对象， 设置 _LIBCONTAINER_INITTYPE 为standard
+		// 并生成了 bootstrapData，主要是namespace 和 oom score
+		// 装载了 cgroupManager, 后面分析 resume/pause 时会提到部分cgroupManager
+		// init-p, init-c 通信管道设置
 		return c.newInitProcess(p, cmd, comm)
 	}
 	return c.newSetnsProcess(p, cmd, comm)

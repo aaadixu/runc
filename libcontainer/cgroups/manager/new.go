@@ -42,8 +42,13 @@ func NewWithPaths(config *configs.Cgroup, paths map[string]string) (cgroups.Mana
 			return nil, fmt.Errorf("manager.NewWithPaths: inconsistent paths: %w", err)
 		}
 		if config.Systemd {
+			// 如果 config.Systemd 为 true，创建并返回一个新的 systemd 统一管理器。
+			// 使用 systemd 作为 cgroup 管理器。
 			return systemd.NewUnifiedManager(config, path)
 		}
+		// 否则，创建并返回一个新的 fs2 管理器。
+		// 使用直接操作文件系统的方式来管理 cgroups。
+		// 不依赖 systemd，可以在没有 systemd 的环境下使用。
 		return fs2.NewManager(config, path)
 	}
 
@@ -51,7 +56,7 @@ func NewWithPaths(config *configs.Cgroup, paths map[string]string) (cgroups.Mana
 	if config.Systemd {
 		return systemd.NewLegacyManager(config, paths)
 	}
-
+	// 建并返回一个新的 fs 管理器。
 	return fs.NewManager(config, paths)
 }
 

@@ -32,28 +32,34 @@ const (
 // ASCII letters, digits, underscore, plus, minus, period. The id must be
 // unique and non-existent for the given root path.
 func Create(root, id string, config *configs.Config) (*Container, error) {
+	// 存储容器状态的根目录路径 /run/runc
 	if root == "" {
 		return nil, errors.New("root not set")
 	}
+	// 验证 id 是否有效
 	if err := validateID(id); err != nil {
 		return nil, err
 	}
+	// 验证 config 配置是否正确
 	if err := validate.Validate(config); err != nil {
 		return nil, err
 	}
+	// 创建 root 目录及其所有父目录
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
+	// 生成容器状态目录路径
 	stateDir, err := securejoin.SecureJoin(root, id)
 	if err != nil {
 		return nil, err
 	}
+	// 检查状态目录是否存在。如果存在，则返回错误 ErrExist。
 	if _, err := os.Stat(stateDir); err == nil {
 		return nil, ErrExist
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-
+	// 使用容器的 cgroup 配置创建一个新的 cgroup 管理器实例 cm
 	cm, err := manager.New(config.Cgroups)
 	if err != nil {
 		return nil, err
@@ -87,9 +93,11 @@ func Create(root, id string, config *configs.Config) (*Container, error) {
 	}
 
 	// Parent directory is already created above, so Mkdir is enough.
+	// 创建状态目录。如果创建失败，返回错误。
 	if err := os.Mkdir(stateDir, 0o711); err != nil {
 		return nil, err
 	}
+	// 创建一个新的容器实例 c，初始化其各个属性
 	c := &Container{
 		id:              id,
 		stateDir:        stateDir,
@@ -97,6 +105,7 @@ func Create(root, id string, config *configs.Config) (*Container, error) {
 		cgroupManager:   cm,
 		intelRdtManager: intelrdt.NewManager(config, id, ""),
 	}
+	// 将容器的状态设置为 stoppedState。
 	c.state = &stoppedState{c: c}
 	return c, nil
 }

@@ -86,7 +86,9 @@ func (l *linuxStandardInit) Init() error {
 
 	// initialises the labeling system
 	selinux.GetEnabled()
-
+	// 准备rootfs，主要是根目录挂载，外部卷挂载，创建设备
+	// 通知runc create进行pre start的hook调用，pivot_root 或 change_root，限定进程使用根目录。
+	// 需要注意一点，容器的pre start的hook调用发生在限定容器的根目录之前。
 	err := prepareRootfs(l.pipe, l.config)
 	if err != nil {
 		return err
@@ -111,12 +113,13 @@ func (l *linuxStandardInit) Init() error {
 	}
 
 	// Finish the rootfs setup.
+	// 完成最终的rootfs ，主要是把需要挂载的mount point 挂上去
 	if l.config.Config.Namespaces.Contains(configs.NEWNS) {
 		if err := finalizeRootfs(l.config.Config); err != nil {
 			return err
 		}
 	}
-
+	// 设置hostname
 	if hostname := l.config.Config.Hostname; hostname != "" {
 		if err := unix.Sethostname([]byte(hostname)); err != nil {
 			return &os.SyscallError{Syscall: "sethostname", Err: err}
@@ -270,6 +273,7 @@ func (l *linuxStandardInit) Init() error {
 
 	s := l.config.SpecState
 	s.Pid = unix.Getpid()
+	// 设置为created 状态
 	s.Status = specs.StateCreated
 	if err := l.config.Config.Hooks.Run(configs.StartContainer, s); err != nil {
 		return err
@@ -297,5 +301,6 @@ func (l *linuxStandardInit) Init() error {
 	if err := utils.UnsafeCloseFrom(l.config.PassedFilesCount + 3); err != nil {
 		return err
 	}
+	// 执行容器的启动命令
 	return system.Exec(name, l.config.Args, os.Environ())
 }

@@ -50,6 +50,7 @@ var (
 // http://www.freedesktop.org/software/systemd/man/sd_booted.html
 func IsRunningSystemd() bool {
 	isRunningSystemdOnce.Do(func() {
+		// 该目录存在且为目录，则认为系统正在运行 systemd。
 		fi, err := os.Lstat("/run/systemd/system")
 		isRunningSystemd = err == nil && fi.IsDir()
 	})

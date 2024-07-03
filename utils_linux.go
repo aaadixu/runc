@@ -167,10 +167,12 @@ func createPidFile(path string, process *libcontainer.Process) error {
 }
 
 func createContainer(context *cli.Context, id string, spec *specs.Spec) (*libcontainer.Container, error) {
+	// 函数判断当前环境是否应该使用无根 cgroup 管理器
 	rootlessCg, err := shouldUseRootlessCgroupManager(context)
 	if err != nil {
 		return nil, err
 	}
+	// 据提供的选项创建一个 libcontainer 配置
 	config, err := specconv.CreateLibcontainerConfig(&specconv.CreateOpts{
 		CgroupName:       id,
 		UseSystemdCgroup: context.GlobalBool("systemd-cgroup"),
@@ -183,8 +185,14 @@ func createContainer(context *cli.Context, id string, spec *specs.Spec) (*libcon
 	if err != nil {
 		return nil, err
 	}
-
+	/**
+	在 runc 中，root 选项值默认是 /run/runc。
+	用户可以在命令行中指定 --root 选项来覆盖默认值。
+	如果未指定，则使用默认值 /run/runc。
+	在代码中的全局上下文中，通过 context.GlobalString("root") 获取这个值。
+	*/
 	root := context.GlobalString("root")
+	// 创建容器
 	return libcontainer.Create(root, id, config)
 }
 
@@ -215,6 +223,7 @@ func (r *runner) run(config *specs.Process) (int, error) {
 	if err = r.checkTerminal(config); err != nil {
 		return -1, err
 	}
+	// // 创建一个libcontainer 的 process 结构体对象, 该对象是一个容器进程的抽象结构，主要统一配置应用
 	process, err := newProcess(*config)
 	if err != nil {
 		return -1, err
@@ -223,6 +232,7 @@ func (r *runner) run(config *specs.Process) (int, error) {
 	// Populate the fields that come from runner.
 	process.Init = r.init
 	process.SubCgroupPaths = r.subCgroupPaths
+	// 这里就是前面提到ExtraFiles, 设定的fd 从3开始加
 	if len(r.listenFDs) > 0 {
 		process.Env = append(process.Env, "LISTEN_FDS="+strconv.Itoa(len(r.listenFDs)), "LISTEN_PID=1")
 		process.ExtraFiles = append(process.ExtraFiles, r.listenFDs...)
@@ -249,7 +259,11 @@ func (r *runner) run(config *specs.Process) (int, error) {
 	// Setting up IO is a two stage process. We need to modify process to deal
 	// with detaching containers, and then we get a tty after the container has
 	// started.
+	// signalhandler 如果启动 subreaper 就会设置 1 号进程为孤儿进程的托管者
 	handler := newSignalHandler(r.enableSubreaper, r.notifySocket)
+	// 设置进程的IO
+	// 当config.Terminal == true 把IO文件符先设定好(使用了epoll io 监听stdin), 为了后面容器启动后可以得到一个可读写的tty，这里涉及到 socketpair 知识；
+	// 当 config.Terminal == false 和 detach == false 会直接把容器IO copy 到当前终端stdout, stderr
 	tty, err := setupIO(process, rootuid, rootgid, config.Terminal, detach, r.consoleSocket)
 	if err != nil {
 		return -1, err
@@ -282,6 +296,7 @@ func (r *runner) run(config *specs.Process) (int, error) {
 		return -1, err
 	}
 	tty.ClosePostStart()
+	// 创建当前进程文件
 	if r.pidFile != "" {
 		if err = createPidFile(r.pidFile, process); err != nil {
 			r.terminate(process)
@@ -357,11 +372,12 @@ func startContainer(context *cli.Context, action CtAct, criuOpts *libcontainer.C
 	if err := revisePidFile(context); err != nil {
 		return -1, err
 	}
+	// 加载配置文件 config.json
 	spec, err := setupSpec(context)
 	if err != nil {
 		return -1, err
 	}
-
+	// 从命令行参数中获取容器的 ID （第一个参数为 容器的id）
 	id := context.Args().First()
 	if id == "" {
 		return -1, errEmptyID
@@ -371,7 +387,7 @@ func startContainer(context *cli.Context, action CtAct, criuOpts *libcontainer.C
 	if notifySocket != nil {
 		notifySocket.setupSpec(spec)
 	}
-
+	// 创建容器
 	container, err := createContainer(context, id, spec)
 	if err != nil {
 		return -1, err
@@ -389,11 +405,16 @@ func startContainer(context *cli.Context, action CtAct, criuOpts *libcontainer.C
 	}
 
 	// Support on-demand socket activation by passing file descriptors into the container init process.
+	// 这是一个extraFiles 文件描述符队列，主要用于给 init 进程读取参数使用
+	// 一个程序拥有 0 1 2 三个标准文件描述符，标准输入，标准输出，标准错误；在此之外接收的文件描述符称为额外文件描述符即 extraFiles
+	// 后面到了init 进程组装的时候也会在此次提起；
 	listenFDs := []*os.File{}
 	if os.Getenv("LISTEN_FDS") != "" {
 		listenFDs = activation.Files(false)
 	}
-
+	// 创建 runner
+	// runner：负责运行容器的主结构体，包含各种运行时参数和配置。
+	// runner 是装载 init 进程的核心，在此前的工作都是以组装配置和校对配置为主，现在正式把配置内容装载后运行init进程;
 	r := &runner{
 		enableSubreaper: !context.Bool("no-subreaper"),
 		shouldDestroy:   !context.Bool("keep"),
@@ -409,6 +430,7 @@ func startContainer(context *cli.Context, action CtAct, criuOpts *libcontainer.C
 		criuOpts:        criuOpts,
 		init:            true,
 	}
+	// 运行runner
 	return r.run(spec.Process)
 }
 
